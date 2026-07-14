@@ -1,0 +1,56 @@
+name: CI
+on:
+  pull_request:
+  push: { branches: [main] }
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: gocheck
+        run: echo "has_go=$([ -f go.mod ] && echo yes || echo no)" >> $GITHUB_OUTPUT
+      - uses: actions/setup-go@v5
+        if: steps.gocheck.outputs.has_go == 'yes'
+        with: { go-version: '1.26', cache: true }
+      - if: steps.gocheck.outputs.has_go == 'yes'
+        run: go build -o /tmp/build/ ./...
+      - if: steps.gocheck.outputs.has_go == 'yes'
+        run: go vet ./...
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: gocheck
+        run: echo "has_go=$([ -f go.mod ] && echo yes || echo no)" >> $GITHUB_OUTPUT
+      - uses: actions/setup-go@v5
+        if: steps.gocheck.outputs.has_go == 'yes'
+        with: { go-version: '1.26', cache: true }
+      - if: steps.gocheck.outputs.has_go == 'yes'
+        run: go test -race ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: gocheck
+        run: echo "has_go=$([ -f go.mod ] && echo yes || echo no)" >> $GITHUB_OUTPUT
+      - uses: actions/setup-go@v5
+        if: steps.gocheck.outputs.has_go == 'yes'
+        with: { go-version: '1.26', cache: true }
+      - uses: golangci/golangci-lint-action@v8
+        if: steps.gocheck.outputs.has_go == 'yes'
+        with: { version: v2.12.2 }
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz \
+            | tar -xz -C /usr/local/bin gitleaks
+      - name: Scan
+        run: gitleaks git --no-banner --redact --exit-code 1
