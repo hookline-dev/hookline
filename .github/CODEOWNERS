@@ -1,0 +1,16 @@
+# По умолчанию — лид
+*                       @lead-nick
+
+/internal/queue/        @lead-nick
+/internal/worker/       @lead-nick
+/internal/ingest/       @intern-nick
+/internal/delivery/     @intern-nick
+/internal/breaker/      @intern-nick
+/internal/signing/      @dev-a
+/internal/backoff/      @dev-a
+/internal/matcher/      @dev-a
+/internal/api/          @dev-b
+/web/                   @dev-b
+/internal/attempts/     @dev-c
+/cmd/sink/              @dev-c
+/docs/                  @dev-c

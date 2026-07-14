@@ -1,0 +1,18 @@
+name: Баг доставки
+description: Сообщение доставилось не так, как ожидалось
+labels: ["bug", "delivery-bug"]
+body:
+  - type: input
+    id: message_id
+    attributes: { label: message_id }
+    validations: { required: true }
+  - type: textarea
+    id: dump
+    attributes:
+      label: Вывод GET /messages/{id}
+      render: json
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: Ожидал / Получил }
+    validations: { required: true }

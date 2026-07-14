@@ -1,0 +1,34 @@
+name: Задача
+description: Обычная задача разработки
+labels: []
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что
+      description: Одним предложением — что должно появиться или измениться
+    validations: { required: true }
+  - type: input
+    id: why
+    attributes:
+      label: Зачем
+      description: Какой раздел TZ.md это закрывает (например, §5.3)
+    validations: { required: true }
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Критерии приёмки
+      value: |
+        - [ ] 
+        - [ ] 
+    validations: { required: true }
+  - type: textarea
+    id: where
+    attributes:
+      label: Где в коде
+      description: Пакеты и файлы, которые предстоит трогать
+  - type: textarea
+    id: hints
+    attributes:
+      label: Подсказки
+      description: Ссылки на доки, похожий код в репо. Обязательно для L0–L1.
