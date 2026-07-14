@@ -32,7 +32,7 @@ make up && make migrate && make demo
 | [Работа с доской](docs/GITHUB_PROJECTS_GUIDE.md) | GitHub Projects + скрам-минимум |
 | [Git с нуля](docs/GIT_FOR_BEGINNERS.md) | для тех, кто впервые на GitHub |
 | [Задачи для новичков](docs/STARTER_TASKS.md) | с чего начать |
-| [Онбординг](docs/onboarding.md) | поднять проект локально за 30 минут |
+| [Онбординг] (docs/onboarding.md) | поднять проект локально за 30 минут |
 
 ## Команда
 См. [docs/team.md](docs/team.md)
