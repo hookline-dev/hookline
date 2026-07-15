@@ -1,3 +1,12 @@
 .env
 *.pem
 coverage.out
+/bin/
+/dist/
+*.exe
+*.out
+*.log
+.idea/
+.vscode/
+.DS_Store
+.txt
