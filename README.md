@@ -16,11 +16,14 @@ git clone https://github.com/hookline-dev/hookline && cd hookline
 cp .env.example .env
 make up && make migrate && make demo
 ```
+
 Дашборд: http://localhost:8080
+
+Подробнее — [Онбординг за 30 минут](docs/onboarding.md).
 
 ## Как это работает
 
-<!-- сюда потом вставим схему потока и гифку демо -->
+<!-- сюда позже вставим схему потока и гифку демо -->
 
 ## Документация
 
@@ -31,11 +34,19 @@ make up && make migrate && make demo
 | [CONTRIBUTING](CONTRIBUTING.md) | правила разработки — прочитать до первого PR |
 | [Работа с доской](docs/GITHUB_PROJECTS_GUIDE.md) | GitHub Projects + скрам-минимум |
 | [Git с нуля](docs/GIT_FOR_BEGINNERS.md) | для тех, кто впервые на GitHub |
+| [Онбординг](docs/onboarding.md) | поднять проект локально за 30 минут |
 | [Задачи для новичков](docs/STARTER_TASKS.md) | с чего начать |
-| [Онбординг] (docs/onboarding.md) | поднять проект локально за 30 минут |
+| [Настройка репозитория](docs/REPO_SETUP.md) | как всё устроено |
+
+## Доска задач
+
+Все задачи ведём на доске проекта: **[Projects](https://github.com/hookline-dev/hookline/projects)**.
+Как ей пользоваться — в [гайде по доске](docs/GITHUB_PROJECTS_GUIDE.md).
 
 ## Команда
-См. [docs/team.md](docs/team.md)
+
+См. [docs/team.md](docs/team.md).
 
 ## Лицензия
-MIT
+
+[MIT](LICENSE)
