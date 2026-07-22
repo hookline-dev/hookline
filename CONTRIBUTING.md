@@ -24,7 +24,7 @@ make lint
 
 - Единственный трекер — **GitHub Issues + доска GitHub Projects** этого репозитория. Задач вне трекера не существует. Как пользоваться доской и скрам-минимум — `docs/GITHUB_PROJECTS_GUIDE.md`, читается один раз до первого спринта.
 - Колонки (поле `Status`): `Backlog → Ready → In Progress → In Review → Done`.
-- Поля задачи: **Level** (L0–L4), **Size** (S/M/L), **Sprint** (итерация, недельная), **Module** (queue, worker, ingest, delivery, signing, backoff, matcher, breaker, attempts, api, web, infra, docs). Плюс метки `good-first-issue`, `blocked`, `flaky`.
+- Поля задачи: **Level** (L0–L4), **Size** (S/M/L), **Sprint** (итерация, недельная), **Module** (domain, config, storage, queue, worker, ingest, delivery, signing, backoff, matcher, breaker, attempts, api, web, infra, docs). Плюс метки `good-first-issue`, `blocked`, `flaky`.
 - Берём только из `Ready`; назначил себя (Assignee) → перетащил в `In Progress`. Максимум **2 задачи In Progress** на человека.
 - Лестница уровней: до L3 — сначала ≥2 задачи L1 и ≥1 L2; первая L3 только в паре с лидом или стажёром.
 - **Связь issue ↔ PR:** в описании PR обязательна строка `Closes #123`. Тогда при мерже issue закрывается сам и уезжает в `Done` — вручную ничего двигать не надо. В `In Review` карточка тоже переезжает автоматически при открытии PR.
@@ -85,7 +85,7 @@ make lint
 - Пн 30–45 мин планирование (голос). Ср — асинхронный стендап в `#dev` (3 строки). Пт 30 мин — демо смерженного. Раз в месяц — ретро.
 - Решение, которого нет в issue / ADR, не существует. ADR: `docs/adr/`, полстраницы, PR-ом.
 - Новичкам: `docs/GIT_FOR_BEGINNERS.md` + `docs/STARTER_TASKS.md`.
-- **Ритуал «объясни у доски»:** на каждом втором демо один участник за 5 минут объясняет команде одну строку из таблицы §9 ТЗ (backoff, SKIP LOCKED, at-least-once…). Это тренировка ответа на собеседовании, и она обязательна для всех по очереди.
+- **Ритуал «объясни у доски»:** на каждом втором демо один участник за 5 минут объясняет команде одну строку из таблицы §13 ТЗ (backoff, SKIP LOCKED, at-least-once…). Это тренировка ответа на собеседовании, и она обязательна для всех по очереди.
 
 ## 8. Участие и отвал
 
