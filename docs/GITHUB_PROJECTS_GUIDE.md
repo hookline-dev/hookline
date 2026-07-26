@@ -16,7 +16,7 @@
   - `Level`: L0, L1, L2, L3, L4
   - `Size`: S (≤2ч), M (до дня), L (2–3 дня)
   - `Sprint`: недельная итерация (S1…S8)
-  - `Module`: queue, worker, ingest, delivery, signing, backoff, matcher, breaker, attempts, api, web, infra, docs
+  - `Module`: domain, config, storage, queue, worker, ingest, delivery, signing, backoff, matcher, breaker, attempts, api, web, infra, docs
 
 Настройку всего этого делает лид один раз по `docs/REPO_SETUP.md`.
 
