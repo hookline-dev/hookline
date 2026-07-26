@@ -7,18 +7,20 @@
 ## 1. Быстрый старт (онбординг за 30 минут)
 
 ```bash
-git clone https://github.com/<org>/hookline && cd hookline
+git clone https://github.com/hookline-dev/hookline && cd hookline
 cp .env.example .env
-make up              # compose: postgres, api, 3 воркера, sink, grafana
-make migrate
-make demo            # создаёт app + endpoint на sink + подписку и шлёт тестовое событие
+make up              # поднимает postgres (остальные сервисы — по мере готовности)
+make migrate         # применяет миграции
 make test            # go test -race ./...
-make lint
+make lint            # первый запуск сам скачает линтер в ./bin
+make help            # все доступные команды
 ```
+
+⚠️ Часть команд появляется по мере готовности инфраструктуры — актуальный статус в шапке `docs/onboarding.md`.
 
 Требования: Go 1.26+, Docker, make. Не завелось за 30 минут — заведи issue с меткой `onboarding`: это баг документации, а не твой.
 
-Первая задача новичка — L0 из `docs/STARTER_TASKS.md`, полный цикл до мержа за 3 дня.
+Новичку: начни с `docs/NEWCOMER_PATH.md` — там все задачи по этапам и с чего начинать. Первая задача — уровня L0, полный цикл до мержа за 3 дня.
 
 ## 2. Задачи и доска (GitHub Projects)
 
@@ -69,7 +71,7 @@ make lint
 ## 6. Тесты
 
 - Table-driven по умолчанию; `make test` = `go test -race ./...` всегда.
-- Юнит — без сети и БД. Интеграционные (`//go:build integration`) — testcontainers + `cmd/sink` как управляемый получатель, `make test-integration`.
+- Юнит — без сети и БД. Интеграционные (`//go:build integration`) — testcontainers + `cmd/sink` как управляемый получатель; запускаются `go test -tags=integration ./...` (цель `make test-integration` появится вместе с первыми интеграционными тестами).
 - 100% покрытие: `signing`, `backoff`, `matcher`; тестовые векторы подписи зафиксированы навсегда (только добавлять).
 - **Обязательные интеграционные тесты ядра** (без них PR в queue/worker не мержится):
   1. 2+ воркера не берут одно сообщение (`SKIP LOCKED` работает);
@@ -84,8 +86,8 @@ make lint
 - Discord: `#general`, `#dev`, `#blockers`, `#review`, `#demo`.
 - Пн 30–45 мин планирование (голос). Ср — асинхронный стендап в `#dev` (3 строки). Пт 30 мин — демо смерженного. Раз в месяц — ретро.
 - Решение, которого нет в issue / ADR, не существует. ADR: `docs/adr/`, полстраницы, PR-ом.
-- Новичкам: `docs/GIT_FOR_BEGINNERS.md` + `docs/STARTER_TASKS.md`.
-- **Ритуал «объясни у доски»:** на каждом втором демо один участник за 5 минут объясняет команде одну строку из таблицы §13 ТЗ (backoff, SKIP LOCKED, at-least-once…). Это тренировка ответа на собеседовании, и она обязательна для всех по очереди.
+- Новичкам: `docs/NEWCOMER_PATH.md` (что брать и в каком порядке) → `docs/GIT_FOR_BEGINNERS.md` (как работать с git) → `docs/TASK_GUIDES.md` (как делать конкретную задачу).
+- **Ритуал «объясни у доски»:** на каждом втором демо один участник за 5 минут объясняет команде одну строку из таблицы `docs/TZ.md` §13 (backoff, SKIP LOCKED, at-least-once…). Это тренировка ответа на собеседовании, и она обязательна для всех по очереди.
 
 ## 8. Участие и отвал
 
