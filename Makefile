@@ -7,12 +7,9 @@
 
 # --- настройки -------------------------------------------------------------
 
-# Версия линтера
+# Версия линтера и goose
 GOLANGCI_VERSION ?= v2.12.2
-
-# Локальные инструменты в ./bin внутри проекта
-LOCAL_BIN := bin
-GOLANGCI  := $(LOCAL_BIN)/golangci-lint
+GOOSE_VERSION ?= v3.27.1
 
 # Подключаем .env, чтобы переменные были доступны и в make, и в дочерних
 # командах (например, `make run` увидит DATABASE_URL).
@@ -20,11 +17,19 @@ ifneq (,$(wildcard .env))
     include .env
     export
 endif
+
+# Локальные инструменты в ./bin внутри проекта
+LOCAL_BIN := bin
+GOLANGCI  := $(LOCAL_BIN)/golangci-lint
+COMPOSE := docker compose -f deploy/docker-compose.yml
+GOOSE_BIN := $(LOCAL_BIN)/goose
+GOOSE := GOOSE_DRIVER=postgres GOOSE_DBSTRING="$(DATABASE_URL)" $(GOOSE_BIN) -dir migrations
+
 # Если написать просто `make` — покажем справку, а не запустим первую цель.
 .DEFAULT_GOAL := help
 # .PHONY перечислит цели, которые НЕ являются именами файлов.
 .PHONY: help up down down-v logs ps psql run test test-short fmt vet tidy \
-        lint tools migrate clean check
+        lint lint-fix tools migrate migrate-down migrate-status clean check
 
 
 # --- справка ---------------------------------------------------------------
@@ -35,24 +40,23 @@ help:
 # --- инфраструктура (docker) -----------------------------------------------
 
 up: ## поднять базу данных и дождаться её готовности
-	docker compose up -d --wait
+	$(COMPOSE) up -d --wait
 	@echo ">> база готова: localhost:$(POSTGRES_PORT)"
- 
+
 down: ## погасить контейнеры (данные базы сохранятся)
-	docker compose down
- 
+	$(COMPOSE) down
+
 down-v: ## погасить контейнеры И УДАЛИТЬ данные базы (полный сброс)
-	docker compose down -v
- 
+	$(COMPOSE) down -v
+
 logs: ## смотреть логи контейнеров (Ctrl+C — выйти)
-	docker compose logs -f
- 
+	$(COMPOSE) logs -f
+
 ps: ## показать, какие контейнеры запущены
-	docker compose ps
- 
+	$(COMPOSE) ps
+
 psql: ## открыть консоль psql внутри контейнера с базой
-	docker compose exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
- 
+	$(COMPOSE) exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
 
 # --- разработка ------------------------------------------------------------
@@ -89,16 +93,30 @@ $(GOLANGCI):
 tools: $(GOLANGCI) ## поставить локальные инструменты в ./bin
 	@./$(GOLANGCI) --version
  
-lint: $(GOLANGCI) ## проверить код линтером (то же самое, что делает CI)
+lint: $(GOLANGCI) ## проверить код
 	./$(GOLANGCI) run ./...
  
 lint-fix: $(GOLANGCI) ##линтер + автоисправление того, что можно починить само
 	$(GOLANGCI) run --fix ./...
- 
-# --- прочее ----------------------------------------------------------------
 
-migrate: ## применить миграции к базе (появится вместе с задачей #10)
-	@echo "TODO: подключить goose. Пока миграций нет — задача #10 на доске."
+ 
+# --- goose -----------------------------------------------------------------
+
+# make поставит goose, только если файла ./bin/goose нет.
+$(GOOSE_BIN):
+	@echo ">> goose не найден, ставлю $(GOOSE_VERSION) в ./bin ..."
+	@mkdir -p $(LOCAL_BIN)
+	GOBIN=$(CURDIR)/$(LOCAL_BIN) go install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
+	@echo ">> готово: $(GOOSE_BIN)"
+
+migrate: $(GOOSE_BIN) ## применить миграции к базе
+	$(GOOSE) up
+
+migrate-down: $(GOOSE_BIN) ## откатить последнюю миграцию
+	$(GOOSE) down
+
+migrate-status: $(GOOSE_BIN) ## показать статус миграций
+	$(GOOSE) status
 
 clean: ## удалить скачанные инструменты из ./bin
 	rm -rf $(LOCAL_BIN)
