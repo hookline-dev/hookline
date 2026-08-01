@@ -1,8 +1,5 @@
 -- +goose Up
 
-
-
-
 -- apps
 
 CREATE TABLE apps (
