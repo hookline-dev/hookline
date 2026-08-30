@@ -1,0 +1,31 @@
+openapi: 3.1.0
+info: {title: Hookline API, version: 1.0.0}
+servers: [{url: http://localhost:8080}]
+security: [{bearerAuth: []}]
+paths:
+  /ingest/{appID}: {post: {security: [], parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'202': {description: Accepted}}}}
+  /ingest/github/{appID}: {post: {security: [], parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'202': {description: Accepted}, '401': {description: Invalid signature}}}}
+  /api/v1/apps:
+    get: {responses: {'200': {description: Applications}}}
+    post: {responses: {'201': {description: App with one-time API and GitHub secrets}}}
+  /api/v1/apps/{appID}/endpoints:
+    get: {parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'200': {description: Endpoints}}}
+    post: {parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'201': {description: Endpoint without secret}}}
+  /api/v1/endpoints/{endpointID}: {delete: {parameters: [{$ref: '#/components/parameters/EndpointID'}], responses: {'204': {description: Disabled}}}}
+  /api/v1/endpoints/{endpointID}/reset-breaker: {post: {parameters: [{$ref: '#/components/parameters/EndpointID'}], responses: {'204': {description: Reset}}}}
+  /api/v1/endpoints/{endpointID}/subscriptions: {post: {parameters: [{$ref: '#/components/parameters/EndpointID'}], responses: {'201': {description: Subscription}}}}
+  /api/v1/subscriptions/{subscriptionID}: {delete: {parameters: [{in: path, name: subscriptionID, required: true, schema: {type: string, format: uuid}}], responses: {'204': {description: Deleted}}}}
+  /api/v1/events: {get: {responses: {'200': {description: Keyset-paginated events}}}}
+  /api/v1/messages: {get: {responses: {'200': {description: Keyset-paginated messages}}}}
+  /api/v1/messages/{messageID}: {get: {parameters: [{$ref: '#/components/parameters/MessageID'}], responses: {'200': {description: Detail and attempts}}}}
+  /api/v1/messages/{messageID}/replay: {post: {parameters: [{$ref: '#/components/parameters/MessageID'}], responses: {'202': {description: New message}}}}
+  /api/v1/signatures/verify: {post: {responses: {'200': {description: Valid}}}}
+  /healthz: {get: {security: [], responses: {'200': {description: Alive}}}}
+  /readyz: {get: {security: [], responses: {'200': {description: Ready}, '503': {description: Not ready}}}}
+  /metrics: {get: {security: [], responses: {'200': {description: Prometheus}}}}
+components:
+  securitySchemes: {bearerAuth: {type: http, scheme: bearer}}
+  parameters:
+    AppID: {in: path, name: appID, required: true, schema: {type: string, format: uuid}}
+    EndpointID: {in: path, name: endpointID, required: true, schema: {type: string, format: uuid}}
+    MessageID: {in: path, name: messageID, required: true, schema: {type: string, format: uuid}}

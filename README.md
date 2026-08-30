@@ -1,63 +1,56 @@
 # Hookline
 
-Self-hosted сервис надёжной доставки вебхуков: принимает события, разносит подписчикам
-по HTTP и гарантированно доставляет, переживая падения получателей.
+Self-hosted сервис гарантированной доставки вебхуков на Go и PostgreSQL.
 
-Ретраи с экспоненциальным backoff и джиттером · dead-letter queue с ручным replay ·
-circuit breaker · HMAC-подпись запросов · очередь на PostgreSQL (`FOR UPDATE SKIP LOCKED`)
-с несколькими параллельными воркерами.
+[![CI](https://github.com/hookline-dev/hookline/actions/workflows/ci.yml/badge.svg)](https://github.com/hookline-dev/hookline/actions/workflows/ci.yml)
 
-> ⚠️ Учебный проект. В активной разработке.
+## Возможности
+
+- атомарный ingest и fan-out по `exact`, `prefix.*`, `*`;
+- PostgreSQL queue: `SKIP LOCKED`, lease и reaper;
+- HMAC-SHA256, raw-body delivery и constant-time verify;
+- backoff + full jitter, DLQ, Replay и circuit breaker;
+- GitHub ingest и Telegram dogfooding adapter;
+- 4 экрана dashboard, Prometheus и Grafana;
+- режимы `api`, `worker`, `all`.
 
 ## Быстрый старт
 
 ```bash
-git clone https://github.com/hookline-dev/hookline && cd hookline
+git clone https://github.com/hookline-dev/hookline
+cd hookline
 cp .env.example .env
-make up && make migrate && make demo
+make up
+make demo
 ```
 
-Дашборд: http://localhost:8080
+Dashboard: <http://localhost:8080>, Grafana: <http://localhost:3000>, sink:
+<http://localhost:9090/received>. Админские маршруты требуют Bearer key.
 
-Подробнее — [Онбординг за 30 минут](docs/onboarding.md).
+```mermaid
+flowchart TD
+    A["POST /ingest"] --> B["Транзакция: event + messages"]
+    B --> C[("PostgreSQL queue")]
+    C --> D["3 workers + SKIP LOCKED"]
+    D --> E["Signed HTTP POST"]
+    E -->|2xx| F[delivered]
+    E -->|ошибка| G[backoff]
+    G --> C
+    G -->|лимит| H[DLQ]
+    H -->|Replay| C
+```
 
-## Как это работает
+```bash
+make test
+make test-integration
+make cover
+make lint
+```
 
-<!-- сюда позже  вставим схему потока и гифку демо -->
+Контракт: [OpenAPI](docs/api/openapi.yaml), гарантии:
+[delivery-spec](docs/delivery-spec.md), полное [ТЗ](docs/TZ.md).
 
-## Документация
-
-**Новичку — читать в этом порядке:**
-
-| Документ | О чём |
-|---|---|
-| 1. [За что взяться и в каком порядке](docs/NEWCOMER_PATH.md) | **старт для нового участника**: все задачи по этапам |
-| 2. [Git с нуля](docs/GIT_FOR_BEGINNERS.md) | для тех, кто впервые на GitHub |
-| 3. [Онбординг](docs/onboarding.md) | поднять проект локально |
-| 4. [Инструкции по задачам](docs/TASK_GUIDES.md) | пошагово: как делать конкретную задачу |
-| 5. [Руководства: backoff, matcher, signing, sink](docs/TASK_GUIDES_newbie.md) | подробно по четырём задачам новичка |
-
-**Остальное:**
-
-| Документ | О чём |
-|---|---|
-| [Техническое задание](docs/TZ.md) | что строим, архитектура, спецификации модулей |
-| [Роадмап](docs/ROADMAP.md) | план на 8 недель по фазам |
-| [CONTRIBUTING](CONTRIBUTING.md) | правила разработки — прочитать до первого PR |
-| [Работа с доской](docs/GITHUB_PROJECTS_GUIDE.md) | GitHub Projects + скрам-минимум |
-| [Каталог задач для новичков](docs/STARTER_TASKS.md) | справочник задач T-01…T-19 (для лида) |
-| [Настройка репозитория](docs/REPO_SETUP.md) | как всё устроено (для лида) |
-| [Команда](docs/team.md) | кто за что отвечает |
-
-## Доска задач
-
-Все задачи ведём на доске проекта: **[Projects](https://github.com/hookline-dev/hookline/projects)**.
-Как ей пользоваться — в [гайде по доске](docs/GITHUB_PROJECTS_GUIDE.md).
-
-## Команда
-
-См. [docs/team.md](docs/team.md).
-
-## Лицензия
-
-[MIT](LICENSE)
+Для GitHub → Telegram заполните Telegram-переменные в `.env`, запустите профиль
+`dogfood`, создайте endpoint `http://telegram-sink:9092/hook` и подписку
+`github.*`. Доставка — **at-least-once**; порядок не гарантируется, получатель
+дедуплицирует по `X-Hookline-Id`.

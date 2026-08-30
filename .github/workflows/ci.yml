@@ -1,56 +1,49 @@
 name: CI
-on:
-  pull_request:
-  push: { branches: [main] }
-
+on: {push: {branches: [main]}, pull_request: {}}
+permissions: {contents: read}
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - id: gocheck
-        run: echo "has_go=$([ -f go.mod ] && echo yes || echo no)" >> $GITHUB_OUTPUT
       - uses: actions/setup-go@v5
-        if: steps.gocheck.outputs.has_go == 'yes'
-        with: { go-version: '1.26', cache: true }
-      - if: steps.gocheck.outputs.has_go == 'yes'
-        run: go build -o /tmp/build/ ./...
-      - if: steps.gocheck.outputs.has_go == 'yes'
-        run: go vet ./...
-
-  test:
+        with: {go-version: 1.26.x, cache: true}
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+  integration:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: hookline, POSTGRES_PASSWORD: hookline, POSTGRES_DB: hookline}
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U hookline" --health-interval 3s --health-timeout 3s --health-retries 20
+    env: {TEST_DATABASE_URL: "postgres://hookline:hookline@localhost:5432/hookline?sslmode=disable"}
     steps:
       - uses: actions/checkout@v4
-      - id: gocheck
-        run: echo "has_go=$([ -f go.mod ] && echo yes || echo no)" >> $GITHUB_OUTPUT
       - uses: actions/setup-go@v5
-        if: steps.gocheck.outputs.has_go == 'yes'
-        with: { go-version: '1.26', cache: true }
-      - if: steps.gocheck.outputs.has_go == 'yes'
-        run: go test -race ./...
-
+        with: {go-version: 1.26.x, cache: true}
+      - run: go test -race -tags=integration ./...
+      - run: ./scripts/check-coverage.sh
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - id: gocheck
-        run: echo "has_go=$([ -f go.mod ] && echo yes || echo no)" >> $GITHUB_OUTPUT
       - uses: actions/setup-go@v5
-        if: steps.gocheck.outputs.has_go == 'yes'
-        with: { go-version: '1.26', cache: true }
+        with: {go-version: 1.26.x}
       - uses: golangci/golangci-lint-action@v8
-        if: steps.gocheck.outputs.has_go == 'yes'
-        with: { version: v2.12.2 }
-
+        with: {version: v2.12.2}
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with: {context: ., push: false}
   secrets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - name: Install gitleaks
-        run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz \
-            | tar -xz -C /usr/local/bin gitleaks
-      - name: Scan
-        run: gitleaks git --no-banner --redact --exit-code 1
+        with: {fetch-depth: 0}
+      - uses: gitleaks/gitleaks-action@v2

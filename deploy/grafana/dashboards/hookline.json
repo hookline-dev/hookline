@@ -1,0 +1,30 @@
+{
+  "title": "Hookline",
+  "uid": "hookline",
+  "schemaVersion": 41,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Pending",
+      "targets": [{ "expr": "hookline_messages_pending" }],
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 }
+    },
+    {
+      "type": "stat",
+      "title": "Oldest pending",
+      "targets": [{ "expr": "hookline_oldest_pending_seconds" }],
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Deliveries",
+      "targets": [
+        {
+          "expr": "rate(hookline_delivery_total[5m])",
+          "legendFormat": "{{code}}"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 }
+    }
+  ]
+}
