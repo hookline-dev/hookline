@@ -1,2 +1,2 @@
-//HTTP-хендлеры, DTO, middleware
+// HTTP-хендлеры, DTO, middleware
 package api
