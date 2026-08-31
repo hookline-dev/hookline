@@ -129,7 +129,7 @@ func seedMessages(t testing.TB, p *pgxpool.Pool, n int, at time.Time) []domain.M
 	}
 	a, eid, ev := id(), id(), id()
 	c := context.Background()
-	if _, e := p.Exec(c, "INSERT INTO apps(id,name,api_key_hash,github_webhook_secret) VALUES($1::uuid,'x','h','g')", a); e != nil {
+	if _, e := p.Exec(c, "INSERT INTO apps(id,name,api_key_hash,github_webhook_secret) VALUES($1::uuid,'x',$2,'g')", a, "h-"+a); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := p.Exec(c, "INSERT INTO endpoints(id,app_id,url,secret) VALUES($1::uuid,$2::uuid,'http://x','s')", eid, a); e != nil {

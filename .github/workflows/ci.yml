@@ -52,8 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: cp .env.example .env
-      - run: docker compose -f deploy/docker-compose.yml config --quiet
-      - run: docker compose -f deploy/docker-compose.yml up -d --build --wait postgres hookline-api hookline-worker sink
+      - run: docker compose --env-file .env -f deploy/docker-compose.yml config --quiet
+      - run: docker compose --env-file .env -f deploy/docker-compose.yml up -d --build --wait postgres hookline-api hookline-worker sink
       - run: curl --fail --retry 10 --retry-delay 2 http://localhost:8080/readyz
       - if: always()
-        run: docker compose -f deploy/docker-compose.yml down -v
+        run: docker compose --env-file .env -f deploy/docker-compose.yml down -v
