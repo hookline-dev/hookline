@@ -18,7 +18,7 @@ import (
 func TestQueueConcurrencyRetryReap(t *testing.T) {
 	p := testdb.Open(t)
 	now := time.Unix(1700000000, 0).UTC()
-	ids := seedMessages(t, p, 100, now)
+	ids := seedMessages(t, p, 200, now)
 	q := queue.New(p)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -57,6 +57,17 @@ func TestQueueConcurrencyRetryReap(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%s=%d", id, n)
 		}
+	}
+	future := seedMessages(t, p, 1, now.Add(time.Hour))[0]
+	if got, claimErr := q.Claim(context.Background(), "early", 1, now, time.Minute); claimErr != nil || len(got) != 0 {
+		t.Fatalf("future message claimed early: %#v %v", got, claimErr)
+	}
+	got, claimErr := q.Claim(context.Background(), "on-time", 1, now.Add(time.Hour), time.Minute)
+	if claimErr != nil || len(got) != 1 || got[0].Message.ID != future {
+		t.Fatalf("future message not claimed: %#v %v", got, claimErr)
+	}
+	if e := q.Ack(context.Background(), future, domain.Attempt{AttemptNo: 1, CreatedAt: now.Add(time.Hour)}); e != nil {
+		t.Fatal(e)
 	}
 	if e := q.Ack(context.Background(), ids[0], domain.Attempt{AttemptNo: 2, CreatedAt: now}); e != nil {
 		t.Fatalf("ack of an already completed message: %v", e)

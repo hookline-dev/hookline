@@ -3,7 +3,7 @@ set -euo pipefail
 base=${HOOKLINE_BASE_URL:-http://localhost:8080}
 key=${ADMIN_API_KEY:-hk_dev_admin_change_me}
 field(){ python3 -c 'import json,sys;print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
-app=$(curl -fsS -X POST "$base/api/v1/apps" -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"name":"demo"}')
+app=$(curl -fsS -X POST "$base/api/v1/apps" -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"name":"demo","githubWebhookSecret":"demo-github-secret-change-me"}')
 id=$(printf '%s' "$app"|field id); api=$(printf '%s' "$app"|field apiKey)
 ep=$(curl -fsS -X POST "$base/api/v1/apps/$id/endpoints" -H "Authorization: Bearer $api" -H 'Content-Type: application/json' -d '{"url":"http://sink:9090/hook","secret":"whsec_demo","rateLimitRps":5}')
 eid=$(printf '%s' "$ep"|field id)

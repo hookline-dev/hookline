@@ -27,10 +27,15 @@ func (s *service) handler() http.Handler {
 		text := "🪝 Hookline " + r.Header.Get("X-Hookline-Event-Type") + "\n" + string(b)
 		payload, _ := json.Marshal(map[string]string{"chat_id": s.chat, "text": text})
 		req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://api.telegram.org/bot"+s.token+"/sendMessage", bytes.NewReader(payload))
+		if req == nil {
+			http.Error(w, "telegram request failed", http.StatusBadGateway)
+			return
+		}
 		req.Header.Set("Content-Type", "application/json")
 		resp, e := s.client.Do(req)
 		if e != nil {
-			http.Error(w, e.Error(), http.StatusBadGateway)
+			// Never echo the upstream error: it can contain the bot token from the URL.
+			http.Error(w, "telegram request failed", http.StatusBadGateway)
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()

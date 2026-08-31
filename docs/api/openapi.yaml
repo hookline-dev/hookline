@@ -7,7 +7,21 @@ paths:
   /ingest/github/{appID}: {post: {security: [], parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'202': {description: Accepted}, '401': {description: Invalid signature}}}}
   /api/v1/apps:
     get: {responses: {'200': {description: Applications}}}
-    post: {responses: {'201': {description: App with one-time API and GitHub secrets}}}
+    post:
+      description: Admin-only. The API key is returned once; the supplied GitHub secret is never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateApp'}
+      responses:
+        '201':
+          description: Application and one-time API key
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AppCreated'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
   /api/v1/apps/{appID}/endpoints:
     get: {parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'200': {description: Endpoints}}}
     post: {parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'201': {description: Endpoint without secret}}}
@@ -25,7 +39,81 @@ paths:
   /metrics: {get: {security: [], responses: {'200': {description: Prometheus}}}}
 components:
   securitySchemes: {bearerAuth: {type: http, scheme: bearer}}
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
   parameters:
     AppID: {in: path, name: appID, required: true, schema: {type: string, format: uuid}}
     EndpointID: {in: path, name: endpointID, required: true, schema: {type: string, format: uuid}}
     MessageID: {in: path, name: messageID, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    CreateApp:
+      type: object
+      additionalProperties: false
+      required: [name, githubWebhookSecret]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        githubWebhookSecret:
+          type: string
+          minLength: 16
+          writeOnly: true
+    AppCreated:
+      type: object
+      required: [id, name, apiKey]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        apiKey: {type: string, writeOnly: true, description: Returned once}
+    Endpoint:
+      type: object
+      required: [id, appId, url, status, rateLimitRps, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        appId: {type: string, format: uuid}
+        url: {type: string, format: uri}
+        status: {type: string, enum: [active, disabled]}
+        breakerState: {type: string, enum: [closed, open, half_open]}
+        breakerFailures: {type: integer, minimum: 0}
+        rateLimitRps: {type: integer, minimum: 0}
+        createdAt: {type: string, format: date-time}
+    Event:
+      type: object
+      required: [id, appId, type, payload, receivedAt]
+      properties:
+        id: {type: string, format: uuid}
+        appId: {type: string, format: uuid}
+        type: {type: string}
+        payload: {}
+        idempotencyKey: {type: string}
+        receivedAt: {type: string, format: date-time}
+    Message:
+      type: object
+      required: [id, eventId, endpointId, status, attempt, nextAttemptAt, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        eventId: {type: string, format: uuid}
+        endpointId: {type: string, format: uuid}
+        status: {type: string, enum: [pending, in_flight, delivered, dead]}
+        attempt: {type: integer, minimum: 0}
+        nextAttemptAt: {type: string, format: date-time}
+        replayOf: {type: string, format: uuid}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    Problem:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}

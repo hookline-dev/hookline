@@ -132,6 +132,7 @@ type Cursor struct {
 
 // EventFilter selects a page of events.
 type EventFilter struct {
+	AppID  AppID
 	Type   string
 	Before *Cursor
 	Limit  int
@@ -139,6 +140,7 @@ type EventFilter struct {
 
 // MessageFilter selects a page of delivery messages.
 type MessageFilter struct {
+	AppID      AppID
 	Status     MessageStatus
 	EndpointID EndpointID
 	Before     *Cursor

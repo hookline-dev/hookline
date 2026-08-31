@@ -48,9 +48,13 @@ make lint
 ```
 
 Контракт: [OpenAPI](docs/api/openapi.yaml), гарантии:
-[delivery-spec](docs/delivery-spec.md), полное [ТЗ](docs/TZ.md).
+[delivery-spec](docs/delivery-spec.md), [нагрузочная проверка](docs/performance.md),
+[чек-лист релиза](docs/release-checklist.md), полное [ТЗ](docs/TZ.md).
 
 Для GitHub → Telegram заполните Telegram-переменные в `.env`, запустите профиль
 `dogfood`, создайте endpoint `http://telegram-sink:9092/hook` и подписку
-`github.*`. Доставка — **at-least-once**; порядок не гарантируется, получатель
+`github.*`. При создании приложения передайте собственный
+`githubWebhookSecret` длиной не менее 16 символов и укажите то же значение в
+настройках GitHub; API никогда не возвращает этот секрет. Доставка —
+**at-least-once**; порядок не гарантируется, получатель
 дедуплицирует по `X-Hookline-Id`.

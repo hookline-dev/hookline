@@ -82,11 +82,26 @@ func run() error {
 	pool := worker.New(q, sender, br, lim, met, clock, log, worker.Config{PoolSize: c.WorkerPoolSize, BatchSize: c.WorkerBatchSize, PollInterval: c.WorkerPollInterval, LeaseDuration: c.QueueLeaseDuration, ReaperInterval: c.QueueReaperInterval, MaxAttempts: c.RetryMaxAttempts, Retry: backoff.Config{Base: c.RetryBaseDelay, Cap: c.RetryMaxDelay}, CleanupTimeout: c.HTTPShutdownTimeout})
 	router := api.NewRouter(api.Dependencies{Repository: store, Ingest: ingest.New(store, c.IngestMaxBodyBytes), Clock: clock, Logger: log, AdminAPIKey: c.AdminAPIKey, MaxBodyBytes: c.IngestMaxBodyBytes, SignatureTolerance: c.SignatureTolerance, DefaultRateLimit: c.DefaultEndpointRateLimit, BreakerDefaultDuration: c.BreakerOpenDuration, RequireWorkersReady: *mode == "all", Workers: pool, MetricsHandler: met.Handler()})
 	srv := &http.Server{Addr: ":" + c.HTTPPort, Handler: router, ReadTimeout: c.HTTPReadTimeout, ReadHeaderTimeout: c.HTTPReadTimeout, WriteTimeout: c.HTTPWriteTimeout, IdleTimeout: time.Minute}
+	workerPort := strings.TrimSpace(os.Getenv("WORKER_METRICS_PORT"))
+	if workerPort == "" {
+		workerPort = "9093"
+	}
+	workerMux := http.NewServeMux()
+	workerMux.Handle("/metrics", met.Handler())
+	workerMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		if pool.Running() == 0 {
+			http.Error(w, "workers unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	workerSrv := &http.Server{Addr: ":" + workerPort, Handler: workerMux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: time.Minute}
 	sig, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithCancel(sig)
 	defer cancel()
-	errs := make(chan error, 2)
+	errs := make(chan error, 3)
 	var wg sync.WaitGroup
 	if *mode != "api" {
 		wg.Add(1)
@@ -107,6 +122,16 @@ func run() error {
 			}
 		}()
 	}
+	if *mode != "api" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			x := workerSrv.ListenAndServe()
+			if x != nil && !errors.Is(x, http.ErrServerClosed) {
+				errs <- x
+			}
+		}()
+	}
 	select {
 	case <-sig.Done():
 	case e = <-errs:
@@ -116,6 +141,9 @@ func run() error {
 	defer done()
 	if *mode != "worker" {
 		_ = srv.Shutdown(down)
+	}
+	if *mode != "api" {
+		_ = workerSrv.Shutdown(down)
 	}
 	wg.Wait()
 	return e
