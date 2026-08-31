@@ -51,11 +51,19 @@ func TestEndToEnd(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- pool.Run(ctx) }()
 	defer func() { cancel(); <-done }()
-	app := request(t, router, "admin", http.MethodPost, "/api/v1/apps", `{"name":"e2e"}`)
+	const gh = "github-webhook-secret-e2e"
+	app := request(t, router, "admin", http.MethodPost, "/api/v1/apps", `{"name":"e2e","githubWebhookSecret":"`+gh+`"}`)
 	appID := app["id"].(string)
 	appKey := app["apiKey"].(string)
-	gh := app["githubWebhookSecret"].(string)
+	if _, exposed := app["githubWebhookSecret"]; exposed {
+		t.Fatal("GitHub secret must never be returned")
+	}
 	expectStatus(t, router, appKey, http.MethodGet, "/api/v1/apps", "", http.StatusOK)
+	expectStatus(t, router, appKey, http.MethodPost, "/api/v1/apps", `{"name":"forbidden","githubWebhookSecret":"1234567890123456"}`, http.StatusUnauthorized)
+	other := request(t, router, "admin", http.MethodPost, "/api/v1/apps", `{"name":"other","githubWebhookSecret":"other-github-secret"}`)
+	otherKey := other["apiKey"].(string)
+	expectStatus(t, router, otherKey, http.MethodGet, "/api/v1/apps/"+appID+"/endpoints", "", http.StatusNotFound)
+	expectStatus(t, router, appKey, http.MethodPost, "/api/v1/apps/"+appID+"/endpoints", fmtJSON(map[string]any{"url": sink.URL, "secret": "endpoint-secret", "rateLimitRps": -1}), http.StatusBadRequest)
 	ep := request(t, router, appKey, http.MethodPost, "/api/v1/apps/"+appID+"/endpoints", fmtJSON(map[string]any{"url": sink.URL, "secret": "endpoint-secret", "rateLimitRps": 10}))
 	epID := ep["id"].(string)
 	expectStatus(t, router, appKey, http.MethodGet, "/api/v1/apps/"+appID+"/endpoints", "", http.StatusOK)

@@ -44,7 +44,7 @@ services:
   hookline-worker:
     build: {context: ..}
     entrypoint: [/usr/local/bin/hookline, --mode=worker]
-    environment: {<<: *env, APP_MODE: worker}
+    environment: {<<: *env, APP_MODE: worker, WORKER_METRICS_PORT: 9093}
     deploy: {replicas: 3}
     depends_on: {hookline-api: {condition: service_healthy}}
   sink:
@@ -70,4 +70,5 @@ services:
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
       HOOKLINE_ENDPOINT_SECRET: "${TELEGRAM_ENDPOINT_SECRET}"
       SIGNATURE_TOLERANCE: "${SIGNATURE_TOLERANCE}"
+    ports: ["9092:9092"]
 volumes: {hookline-pg-data: {}}

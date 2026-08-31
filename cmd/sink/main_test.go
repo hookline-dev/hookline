@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestSinkStatusReceivedAndReset(t *testing.T) {
@@ -46,8 +47,12 @@ func TestSinkDelayValidation(t *testing.T) {
 		}
 	}
 	w := httptest.NewRecorder()
+	started := time.Now()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/hook?delay=1ms", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("valid delay status=%d", w.Code)
+	}
+	if time.Since(started) < time.Millisecond {
+		t.Fatal("configured delay was not applied")
 	}
 }

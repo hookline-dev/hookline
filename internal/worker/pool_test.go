@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +46,31 @@ type fs struct{ result delivery.Result }
 func (s fs) Send(context.Context, domain.Endpoint, domain.Event, domain.MessageID, time.Time) delivery.Result {
 	return s.result
 }
+
+type blockingSender struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s blockingSender) Send(context.Context, domain.Endpoint, domain.Event, domain.MessageID, time.Time) delivery.Result {
+	close(s.started)
+	<-s.release
+	status := http.StatusNoContent
+	return delivery.Result{Success: true, StatusCode: &status}
+}
+
+type emptyQueue struct{ claims atomic.Int32 }
+
+func (q *emptyQueue) Claim(context.Context, string, int, time.Time, time.Duration) ([]queue.ClaimedMessage, error) {
+	q.claims.Add(1)
+	return nil, nil
+}
+func (*emptyQueue) Ack(context.Context, domain.MessageID, domain.Attempt) error { return nil }
+func (*emptyQueue) Nack(context.Context, domain.MessageID, domain.Attempt, time.Time, int) error {
+	return nil
+}
+func (*emptyQueue) Release(context.Context, domain.MessageID, time.Time, time.Time) error { return nil }
+func (*emptyQueue) Reap(context.Context, time.Time) (int, error)                          { return 0, nil }
 
 type fb struct{ allow bool }
 
@@ -100,5 +127,53 @@ func TestPoolPaths(t *testing.T) {
 				t.Fatal(e)
 			}
 		})
+	}
+}
+
+func TestPoolRunsTenWorkersWithoutBusyPolling(t *testing.T) {
+	q := &emptyQueue{}
+	p := New(q, fs{}, fb{true}, fl{true}, nil, fc{time.Unix(1, 0)}, nil, Config{PoolSize: 10, BatchSize: 1, PollInterval: 10 * time.Millisecond, LeaseDuration: time.Second, ReaperInterval: time.Hour, MaxAttempts: 2, Retry: backoff.Config{Base: time.Millisecond, Cap: time.Second}, CleanupTimeout: time.Second})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- p.Run(ctx) }()
+	deadline := time.NewTimer(time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	defer deadline.Stop()
+	defer ticker.Stop()
+	for p.Running() != 10 {
+		select {
+		case <-deadline.C:
+			t.Fatalf("running=%d", p.Running())
+		case <-ticker.C:
+		}
+	}
+	window := time.NewTimer(35 * time.Millisecond)
+	<-window.C
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if calls := q.claims.Load(); calls > 60 {
+		t.Fatalf("empty queue was busy-polled %d times", calls)
+	}
+}
+
+func TestShutdownCompletesActiveDelivery(t *testing.T) {
+	q := &fq{batch: []queue.ClaimedMessage{{Message: domain.Message{ID: "m"}, Endpoint: domain.Endpoint{ID: "e"}}}, ack: make(chan domain.MessageID, 1), nack: make(chan domain.MessageID, 1), release: make(chan domain.MessageID, 1)}
+	sender := blockingSender{started: make(chan struct{}), release: make(chan struct{})}
+	p := New(q, sender, fb{true}, fl{true}, nil, fc{time.Unix(1, 0)}, nil, Config{PoolSize: 1, BatchSize: 1, PollInterval: time.Millisecond, LeaseDuration: time.Second, ReaperInterval: time.Hour, MaxAttempts: 2, Retry: backoff.Config{Base: time.Millisecond, Cap: time.Second}, CleanupTimeout: time.Second})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- p.Run(ctx) }()
+	<-sender.started
+	cancel()
+	close(sender.release)
+	select {
+	case <-q.ack:
+	case <-time.After(time.Second):
+		t.Fatal("active delivery was not acknowledged")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

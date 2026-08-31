@@ -28,7 +28,7 @@ vet: ## vet
 	go vet ./...
 lint: ## golangci-lint
 	golangci-lint run ./...
-migrate: ## миграции выполняются API при AUTO_MIGRATE=true
-	@echo "Migrations are applied automatically by hookline-api"
+migrate: ## применить миграции отдельной командой
+	$(COMPOSE) run --rm --entrypoint /usr/local/bin/migrate hookline-api
 demo: ## минимальное end-to-end демо
 	./scripts/demo.sh

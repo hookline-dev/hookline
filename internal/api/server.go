@@ -31,14 +31,17 @@ import (
 type repository interface {
 	Ping(context.Context) error
 	CreateApp(context.Context, domain.App, string, string) error
+	GetApp(context.Context, domain.AppID) (domain.App, error)
 	ListApps(context.Context) ([]domain.App, error)
-	APIKeyExists(context.Context, string) (bool, error)
+	APIKeyAppID(context.Context, string) (domain.AppID, bool, error)
 	GetGitHubSecret(context.Context, domain.AppID) (string, error)
 	CreateEndpoint(context.Context, domain.Endpoint) error
 	ListEndpoints(context.Context, domain.AppID) ([]domain.Endpoint, error)
+	GetEndpoint(context.Context, domain.EndpointID) (domain.Endpoint, error)
 	DisableEndpoint(context.Context, domain.EndpointID) error
 	ResetBreaker(context.Context, domain.EndpointID, time.Duration) error
 	CreateSubscription(context.Context, domain.Subscription) error
+	GetSubscriptionAppID(context.Context, domain.SubscriptionID) (domain.AppID, error)
 	DeleteSubscription(context.Context, domain.SubscriptionID) error
 	ListEvents(context.Context, domain.EventFilter) ([]domain.Event, error)
 	ListMessages(context.Context, domain.MessageFilter) ([]domain.Message, error)
@@ -69,6 +72,12 @@ type server struct {
 }
 
 type requestIDKey struct{}
+type authScopeKey struct{}
+
+type authScope struct {
+	admin bool
+	appID domain.AppID
+}
 
 type statusRecorder struct {
 	http.ResponseWriter
@@ -86,6 +95,9 @@ func (w *statusRecorder) WriteHeader(status int) {
 func NewRouter(d Dependencies) http.Handler {
 	if d.Logger == nil {
 		d.Logger = slog.New(slog.DiscardHandler)
+	}
+	if d.Clock == nil {
+		d.Clock = domain.RealClock{}
 	}
 	s := &server{Dependencies: d, admin: sha256.Sum256([]byte(d.AdminAPIKey))}
 	r := chi.NewRouter()
@@ -131,7 +143,12 @@ func (s *server) requestID(n http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Request-Id")
 		if id == "" || len(id) > 128 {
-			id, _ = domain.NewID()
+			var e error
+			id, e = domain.NewID()
+			if e != nil {
+				mapError(w, e)
+				return
+			}
 		}
 		w.Header().Set("X-Request-Id", id)
 		n.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, id)))
@@ -140,7 +157,7 @@ func (s *server) requestID(n http.Handler) http.Handler {
 
 func (s *server) logger(n http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		started := time.Now()
+		started := s.Clock.Now()
 		recorder := &statusRecorder{ResponseWriter: w}
 		n.ServeHTTP(recorder, r)
 		status := recorder.status
@@ -152,7 +169,7 @@ func (s *server) logger(n http.Handler) http.Handler {
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
 			slog.Int("status", status),
-			slog.Duration("duration", time.Since(started)),
+			slog.Duration("duration", s.Clock.Now().Sub(started)),
 		)
 	})
 }
@@ -182,21 +199,39 @@ func (s *server) auth(n http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		v := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		h := sha256.Sum256([]byte(v))
-		ok := v != "" && subtle.ConstantTimeCompare(h[:], s.admin[:]) == 1
-		if !ok {
+		scope := authScope{admin: v != "" && subtle.ConstantTimeCompare(h[:], s.admin[:]) == 1}
+		if !scope.admin {
+			var ok bool
 			var e error
-			ok, e = s.Repository.APIKeyExists(r.Context(), hex.EncodeToString(h[:]))
+			scope.appID, ok, e = s.Repository.APIKeyAppID(r.Context(), hex.EncodeToString(h[:]))
 			if e != nil {
 				mapError(w, e)
 				return
 			}
+			if !ok {
+				mapError(w, domain.ErrUnauthorized)
+				return
+			}
 		}
-		if !ok {
+		if v == "" {
 			mapError(w, domain.ErrUnauthorized)
 			return
 		}
-		n.ServeHTTP(w, r)
+		n.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authScopeKey{}, scope)))
 	})
+}
+
+func scope(ctx context.Context) authScope {
+	v, _ := ctx.Value(authScopeKey{}).(authScope)
+	return v
+}
+
+func (s *server) authorizeApp(ctx context.Context, id domain.AppID) error {
+	v := scope(ctx)
+	if v.admin || v.appID == id {
+		return nil
+	}
+	return domain.ErrNotFound
 }
 
 func (s *server) ready(w http.ResponseWriter, r *http.Request) {
@@ -247,6 +282,10 @@ func token(prefix string) (string, error) {
 }
 
 func (s *server) createApp(w http.ResponseWriter, r *http.Request) {
+	if !scope(r.Context()).admin {
+		mapError(w, domain.ErrUnauthorized)
+		return
+	}
 	var q struct {
 		Name   string `json:"name"`
 		GitHub string `json:"githubWebhookSecret,omitempty"`
@@ -256,6 +295,7 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.Name = strings.TrimSpace(q.Name)
+	q.GitHub = strings.TrimSpace(q.GitHub)
 	if q.Name == "" || len(q.Name) > 200 {
 		mapError(w, domain.ErrInvalidInput)
 		return
@@ -270,12 +310,9 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
-	if q.GitHub == "" {
-		q.GitHub, e = token("ghsec_")
-		if e != nil {
-			mapError(w, e)
-			return
-		}
+	if len(q.GitHub) < 16 || len(q.GitHub) > 512 {
+		mapError(w, domain.ErrInvalidInput)
+		return
 	}
 	a := domain.App{ID: domain.AppID(id), Name: q.Name, CreatedAt: s.Clock.Now()}
 	h := sha256.Sum256([]byte(key))
@@ -283,10 +320,19 @@ func (s *server) createApp(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
-	write(w, 201, map[string]any{"id": a.ID, "name": a.Name, "apiKey": key, "githubWebhookSecret": q.GitHub})
+	write(w, 201, map[string]any{"id": a.ID, "name": a.Name, "apiKey": key})
 }
 
 func (s *server) listApps(w http.ResponseWriter, r *http.Request) {
+	if v := scope(r.Context()); !v.admin {
+		a, e := s.Repository.GetApp(r.Context(), v.appID)
+		if e != nil {
+			mapError(w, e)
+			return
+		}
+		write(w, 200, []domain.App{a})
+		return
+	}
 	v, e := s.Repository.ListApps(r.Context())
 	if e != nil {
 		mapError(w, e)
@@ -301,6 +347,10 @@ func (s *server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
+	if e = s.authorizeApp(r.Context(), domain.AppID(a)); e != nil {
+		mapError(w, e)
+		return
+	}
 	var q struct {
 		URL, Secret string
 		Rate        int `json:"rateLimitRps"`
@@ -310,14 +360,18 @@ func (s *server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, x := url.ParseRequestURI(q.URL)
-	if x != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || q.Secret == "" {
+	if x != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || q.Secret == "" || q.Rate < 0 {
 		mapError(w, domain.ErrInvalidInput)
 		return
 	}
 	if q.Rate == 0 {
 		q.Rate = s.DefaultRateLimit
 	}
-	id, _ := domain.NewID()
+	id, e := domain.NewID()
+	if e != nil {
+		mapError(w, e)
+		return
+	}
 	v := domain.Endpoint{ID: domain.EndpointID(id), AppID: domain.AppID(a), URL: q.URL, Secret: q.Secret, BreakerState: domain.BreakerClosed, BreakerOpenDuration: s.BreakerDefaultDuration, RateLimitRPS: q.Rate, CreatedAt: s.Clock.Now()}
 	if e = s.Repository.CreateEndpoint(r.Context(), v); e != nil {
 		mapError(w, e)
@@ -340,6 +394,10 @@ func (s *server) listEndpoints(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
+	if e = s.authorizeApp(r.Context(), domain.AppID(a)); e != nil {
+		mapError(w, e)
+		return
+	}
 	v, e := s.Repository.ListEndpoints(r.Context(), domain.AppID(a))
 	if e != nil {
 		mapError(w, e)
@@ -355,6 +413,13 @@ func (s *server) listEndpoints(w http.ResponseWriter, r *http.Request) {
 func (s *server) disable(w http.ResponseWriter, r *http.Request) {
 	id, e := path(r, "endpointID")
 	if e == nil {
+		var ep domain.Endpoint
+		ep, e = s.Repository.GetEndpoint(r.Context(), domain.EndpointID(id))
+		if e == nil {
+			e = s.authorizeApp(r.Context(), ep.AppID)
+		}
+	}
+	if e == nil {
 		e = s.Repository.DisableEndpoint(r.Context(), domain.EndpointID(id))
 	}
 	if e != nil {
@@ -366,6 +431,13 @@ func (s *server) disable(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) reset(w http.ResponseWriter, r *http.Request) {
 	id, e := path(r, "endpointID")
+	if e == nil {
+		var ep domain.Endpoint
+		ep, e = s.Repository.GetEndpoint(r.Context(), domain.EndpointID(id))
+		if e == nil {
+			e = s.authorizeApp(r.Context(), ep.AppID)
+		}
+	}
 	if e == nil {
 		e = s.Repository.ResetBreaker(r.Context(), domain.EndpointID(id), s.BreakerDefaultDuration)
 	}
@@ -384,6 +456,13 @@ func (s *server) subscribe(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		e = decode(w, r, s.MaxBodyBytes, &q)
 	}
+	if e == nil {
+		var ep domain.Endpoint
+		ep, e = s.Repository.GetEndpoint(r.Context(), domain.EndpointID(id))
+		if e == nil {
+			e = s.authorizeApp(r.Context(), ep.AppID)
+		}
+	}
 	if e == nil && !pattern(q.EventType) {
 		e = domain.ErrInvalidEventType
 	}
@@ -391,7 +470,11 @@ func (s *server) subscribe(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
-	x, _ := domain.NewID()
+	x, e := domain.NewID()
+	if e != nil {
+		mapError(w, e)
+		return
+	}
 	v := domain.Subscription{ID: domain.SubscriptionID(x), EndpointID: domain.EndpointID(id), EventType: q.EventType, CreatedAt: s.Clock.Now()}
 	if e = s.Repository.CreateSubscription(r.Context(), v); e != nil {
 		mapError(w, e)
@@ -402,6 +485,13 @@ func (s *server) subscribe(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) unsubscribe(w http.ResponseWriter, r *http.Request) {
 	id, e := path(r, "subscriptionID")
+	if e == nil {
+		var appID domain.AppID
+		appID, e = s.Repository.GetSubscriptionAppID(r.Context(), domain.SubscriptionID(id))
+		if e == nil {
+			e = s.authorizeApp(r.Context(), appID)
+		}
+	}
 	if e == nil {
 		e = s.Repository.DeleteSubscription(r.Context(), domain.SubscriptionID(id))
 	}
@@ -499,7 +589,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
-	v, e := s.Repository.ListEvents(r.Context(), domain.EventFilter{Type: r.URL.Query().Get("type"), Before: c, Limit: n + 1})
+	v, e := s.Repository.ListEvents(r.Context(), domain.EventFilter{AppID: scope(r.Context()).appID, Type: r.URL.Query().Get("type"), Before: c, Limit: n + 1})
 	if e != nil {
 		mapError(w, e)
 		return
@@ -534,7 +624,7 @@ func (s *server) messages(w http.ResponseWriter, r *http.Request) {
 		mapError(w, domain.ErrInvalidInput)
 		return
 	}
-	v, e := s.Repository.ListMessages(r.Context(), domain.MessageFilter{Status: st, EndpointID: ep, Before: c, Limit: n + 1})
+	v, e := s.Repository.ListMessages(r.Context(), domain.MessageFilter{AppID: scope(r.Context()).appID, Status: st, EndpointID: ep, Before: c, Limit: n + 1})
 	if e != nil {
 		mapError(w, e)
 		return
@@ -559,6 +649,10 @@ func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
+	if e = s.authorizeApp(r.Context(), v.Event.AppID); e != nil {
+		mapError(w, e)
+		return
+	}
 	write(w, 200, map[string]any{"id": v.Message.ID, "status": v.Message.Status, "attempt": v.Message.Attempt, "nextAttemptAt": v.Message.NextAttemptAt, "replayOf": v.Message.ReplayOf, "event": v.Event, "endpoint": endpointDTO(v.Endpoint), "attempts": v.Attempts})
 }
 
@@ -568,7 +662,19 @@ func (s *server) replay(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
-	n, _ := domain.NewID()
+	detail, e := s.Repository.GetMessageDetail(r.Context(), domain.MessageID(id))
+	if e == nil {
+		e = s.authorizeApp(r.Context(), detail.Event.AppID)
+	}
+	if e != nil {
+		mapError(w, e)
+		return
+	}
+	n, e := domain.NewID()
+	if e != nil {
+		mapError(w, e)
+		return
+	}
 	v, e := s.Repository.ReplayMessage(r.Context(), domain.MessageID(id), domain.MessageID(n), s.Clock.Now())
 	if e != nil {
 		mapError(w, e)
@@ -601,7 +707,9 @@ func write(w http.ResponseWriter, status int, v any) {
 }
 
 func problem(w http.ResponseWriter, status int, code, msg string) {
-	write(w, status, map[string]any{"error": map[string]string{"code": code, "message": msg}})
+	w.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": msg}})
 }
 
 func mapError(w http.ResponseWriter, e error) {

@@ -123,10 +123,19 @@ func (s *Store) ListApps(c context.Context) ([]domain.App, error) {
 	return out, r.Err()
 }
 
-func (s *Store) APIKeyExists(c context.Context, h string) (bool, error) {
-	var v bool
-	e := s.pool.QueryRow(c, `SELECT EXISTS(SELECT 1 FROM apps WHERE api_key_hash=$1)`, h).Scan(&v)
-	return v, e
+func (s *Store) GetApp(c context.Context, id domain.AppID) (domain.App, error) {
+	var v domain.App
+	e := s.pool.QueryRow(c, `SELECT id,name,created_at FROM apps WHERE id=$1::uuid`, id).Scan(&v.ID, &v.Name, &v.CreatedAt)
+	return v, mapNF("get app", e)
+}
+
+func (s *Store) APIKeyAppID(c context.Context, h string) (domain.AppID, bool, error) {
+	var id domain.AppID
+	e := s.pool.QueryRow(c, `SELECT id FROM apps WHERE api_key_hash=$1`, h).Scan(&id)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	return id, e == nil, e
 }
 
 func (s *Store) GetGitHubSecret(c context.Context, a domain.AppID) (string, error) {
@@ -207,6 +216,12 @@ func (s *Store) CreateSubscription(c context.Context, v domain.Subscription) err
 	return wrap("create subscription", e)
 }
 
+func (s *Store) GetSubscriptionAppID(c context.Context, id domain.SubscriptionID) (domain.AppID, error) {
+	var appID domain.AppID
+	e := s.pool.QueryRow(c, `SELECT e.app_id FROM subscriptions s JOIN endpoints e ON e.id=s.endpoint_id WHERE s.id=$1::uuid`, id).Scan(&appID)
+	return appID, mapNF("subscription app", e)
+}
+
 func (s *Store) DeleteSubscription(c context.Context, id domain.SubscriptionID) error {
 	return affected(s.pool.Exec(c, `DELETE FROM subscriptions WHERE id=$1::uuid`, id))
 }
@@ -214,6 +229,10 @@ func (s *Store) DeleteSubscription(c context.Context, id domain.SubscriptionID) 
 func (s *Store) ListEvents(c context.Context, f domain.EventFilter) ([]domain.Event, error) {
 	q := `SELECT id,app_id,event_type,payload,COALESCE(idem_key,''),received_at FROM events WHERE true`
 	a := []any{}
+	if f.AppID != "" {
+		a = append(a, f.AppID)
+		q += fmt.Sprintf(" AND app_id=$%d::uuid", len(a))
+	}
 	if f.Type != "" {
 		a = append(a, f.Type)
 		q += fmt.Sprintf(" AND event_type=$%d", len(a))
@@ -245,22 +264,30 @@ func scanMessage(r scanner, v *domain.Message) error {
 }
 
 func (s *Store) ListMessages(c context.Context, f domain.MessageFilter) ([]domain.Message, error) {
-	q := `SELECT id,event_id,endpoint_id,status,attempt,next_attempt_at,locked_until,locked_by,replay_of,created_at,updated_at FROM messages WHERE true`
+	q := `SELECT m.id,m.event_id,m.endpoint_id,m.status,m.attempt,m.next_attempt_at,m.locked_until,m.locked_by,m.replay_of,m.created_at,m.updated_at FROM messages m`
 	a := []any{}
+	if f.AppID != "" {
+		q += ` JOIN events e ON e.id=m.event_id`
+	}
+	q += ` WHERE true`
+	if f.AppID != "" {
+		a = append(a, f.AppID)
+		q += fmt.Sprintf(" AND e.app_id=$%d::uuid", len(a))
+	}
 	if f.Status != "" {
 		a = append(a, f.Status)
-		q += fmt.Sprintf(" AND status=$%d", len(a))
+		q += fmt.Sprintf(" AND m.status=$%d", len(a))
 	}
 	if f.EndpointID != "" {
 		a = append(a, f.EndpointID)
-		q += fmt.Sprintf(" AND endpoint_id=$%d::uuid", len(a))
+		q += fmt.Sprintf(" AND m.endpoint_id=$%d::uuid", len(a))
 	}
 	if f.Before != nil {
 		a = append(a, f.Before.CreatedAt, f.Before.ID)
-		q += fmt.Sprintf(" AND (created_at,id)<($%d,$%d::uuid)", len(a)-1, len(a))
+		q += fmt.Sprintf(" AND (m.created_at,m.id)<($%d,$%d::uuid)", len(a)-1, len(a))
 	}
 	a = append(a, f.Limit)
-	q += fmt.Sprintf(" ORDER BY created_at DESC,id DESC LIMIT $%d", len(a))
+	q += fmt.Sprintf(" ORDER BY m.created_at DESC,m.id DESC LIMIT $%d", len(a))
 	r, e := s.pool.Query(c, q, a...)
 	if e != nil {
 		return nil, e

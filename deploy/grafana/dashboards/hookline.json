@@ -16,6 +16,18 @@
       "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 }
     },
     {
+      "type": "stat",
+      "title": "In flight",
+      "targets": [{ "expr": "hookline_messages_in_flight" }],
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 }
+    },
+    {
+      "type": "stat",
+      "title": "Dead",
+      "targets": [{ "expr": "hookline_messages_dead_total" }],
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 }
+    },
+    {
       "type": "timeseries",
       "title": "Deliveries",
       "targets": [
@@ -25,6 +37,24 @@
         }
       ],
       "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Delivery p95",
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (le) (rate(hookline_delivery_duration_seconds_bucket[5m])))",
+        "legendFormat": "p95 seconds"
+      }],
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Delivery errors",
+      "targets": [{
+        "expr": "sum(rate(hookline_delivery_total{code!~\"2..\"}[5m]))",
+        "legendFormat": "errors/sec"
+      }],
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 7 }
     }
   ]
 }

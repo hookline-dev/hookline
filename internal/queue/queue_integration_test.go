@@ -18,7 +18,7 @@ import (
 func TestQueueConcurrencyRetryReap(t *testing.T) {
 	p := testdb.Open(t)
 	now := time.Unix(1700000000, 0).UTC()
-	ids := seedMessages(t, p, 100, now)
+	ids := seedMessages(t, p, 200, now)
 	q := queue.New(p)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -57,6 +57,17 @@ func TestQueueConcurrencyRetryReap(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%s=%d", id, n)
 		}
+	}
+	future := seedMessages(t, p, 1, now.Add(time.Hour))[0]
+	if got, claimErr := q.Claim(context.Background(), "early", 1, now, time.Minute); claimErr != nil || len(got) != 0 {
+		t.Fatalf("future message claimed early: %#v %v", got, claimErr)
+	}
+	got, claimErr := q.Claim(context.Background(), "on-time", 1, now.Add(time.Hour), time.Minute)
+	if claimErr != nil || len(got) != 1 || got[0].Message.ID != future {
+		t.Fatalf("future message not claimed: %#v %v", got, claimErr)
+	}
+	if e := q.Ack(context.Background(), future, domain.Attempt{AttemptNo: 1, CreatedAt: now.Add(time.Hour)}); e != nil {
+		t.Fatal(e)
 	}
 	if e := q.Ack(context.Background(), ids[0], domain.Attempt{AttemptNo: 2, CreatedAt: now}); e != nil {
 		t.Fatalf("ack of an already completed message: %v", e)
@@ -118,7 +129,7 @@ func seedMessages(t testing.TB, p *pgxpool.Pool, n int, at time.Time) []domain.M
 	}
 	a, eid, ev := id(), id(), id()
 	c := context.Background()
-	if _, e := p.Exec(c, "INSERT INTO apps(id,name,api_key_hash,github_webhook_secret) VALUES($1::uuid,'x','h','g')", a); e != nil {
+	if _, e := p.Exec(c, "INSERT INTO apps(id,name,api_key_hash,github_webhook_secret) VALUES($1::uuid,'x',$2,'g')", a, "h-"+a); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := p.Exec(c, "INSERT INTO endpoints(id,app_id,url,secret) VALUES($1::uuid,$2::uuid,'http://x','s')", eid, a); e != nil {

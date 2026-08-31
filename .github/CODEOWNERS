@@ -1,16 +1,16 @@
 # По умолчанию — лид
-*                       @lead-nick
+*                       @Sushiiis
 
-/internal/queue/        @lead-nick
-/internal/worker/       @lead-nick
-/internal/ingest/       @intern-nick
-/internal/delivery/     @intern-nick
-/internal/breaker/      @intern-nick
-/internal/signing/      @dev-a
-/internal/backoff/      @dev-a
-/internal/matcher/      @dev-a
-/internal/api/          @dev-b
-/web/                   @dev-b
-/internal/attempts/     @dev-c
-/cmd/sink/              @dev-c
-/docs/                  @dev-c
+/internal/queue/        @Sushiiis
+/internal/worker/       @Sushiiis
+/internal/ingest/       @Sushiiis
+/internal/delivery/     @Sushiiis
+/internal/breaker/      @Sushiiis
+/internal/signing/      @Sushiiis
+/internal/backoff/      @Sushiiis
+/internal/matcher/      @Sushiiis
+/internal/api/          @Sushiiis
+/web/                   @Sushiiis
+/internal/attempts/     @Sushiiis
+/cmd/sink/              @Sushiiis
+/docs/                  @Sushiiis
