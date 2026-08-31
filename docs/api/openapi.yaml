@@ -1,14 +1,99 @@
 openapi: 3.1.0
-info: {title: Hookline API, version: 1.0.0}
-servers: [{url: http://localhost:8080}]
-security: [{bearerAuth: []}]
+info:
+  title: Hookline API
+  version: 1.0.0
+  description: API приёма, доставки и наблюдения за webhook-событиями.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - {name: Ingest}
+  - {name: Apps}
+  - {name: Endpoints}
+  - {name: Subscriptions}
+  - {name: Events}
+  - {name: Messages}
+  - {name: Signatures}
+  - {name: System}
+
 paths:
-  /ingest/{appID}: {post: {security: [], parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'202': {description: Accepted}}}}
-  /ingest/github/{appID}: {post: {security: [], parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'202': {description: Accepted}, '401': {description: Invalid signature}}}}
-  /api/v1/apps:
-    get: {responses: {'200': {description: Applications}}}
+  /ingest/{appID}:
     post:
-      description: Admin-only. The API key is returned once; the supplied GitHub secret is never returned.
+      tags: [Ingest]
+      operationId: ingestEvent
+      summary: Принять событие и атомарно создать сообщения доставки
+      security: []
+      parameters:
+        - {$ref: '#/components/parameters/AppID'}
+        - {$ref: '#/components/parameters/EventTypeHeader'}
+        - {$ref: '#/components/parameters/IdempotencyKeyHeader'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {}
+      responses:
+        '202':
+          description: Событие принято
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IngestAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /ingest/github/{appID}:
+    post:
+      tags: [Ingest]
+      operationId: ingestGitHubEvent
+      summary: Принять подписанный GitHub webhook
+      security: []
+      parameters:
+        - {$ref: '#/components/parameters/AppID'}
+        - {$ref: '#/components/parameters/GitHubEventHeader'}
+        - {$ref: '#/components/parameters/GitHubDeliveryHeader'}
+        - {$ref: '#/components/parameters/GitHubSignatureHeader'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {}
+      responses:
+        '202':
+          description: GitHub-событие принято
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IngestAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/InvalidSignature'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/apps:
+    get:
+      tags: [Apps]
+      operationId: listApps
+      summary: Получить доступные приложения
+      responses:
+        '200':
+          description: Список приложений; app-key видит только своё приложение
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/App'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      tags: [Apps]
+      operationId: createApp
+      summary: Создать приложение
+      description: Только admin key. API key возвращается один раз; GitHub secret никогда не возвращается.
       requestBody:
         required: true
         content:
@@ -16,45 +101,399 @@ paths:
             schema: {$ref: '#/components/schemas/CreateApp'}
       responses:
         '201':
-          description: Application and one-time API key
+          description: Приложение и одноразовый API key
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AppCreated'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
   /api/v1/apps/{appID}/endpoints:
-    get: {parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'200': {description: Endpoints}}}
-    post: {parameters: [{$ref: '#/components/parameters/AppID'}], responses: {'201': {description: Endpoint without secret}}}
-  /api/v1/endpoints/{endpointID}: {delete: {parameters: [{$ref: '#/components/parameters/EndpointID'}], responses: {'204': {description: Disabled}}}}
-  /api/v1/endpoints/{endpointID}/reset-breaker: {post: {parameters: [{$ref: '#/components/parameters/EndpointID'}], responses: {'204': {description: Reset}}}}
-  /api/v1/endpoints/{endpointID}/subscriptions: {post: {parameters: [{$ref: '#/components/parameters/EndpointID'}], responses: {'201': {description: Subscription}}}}
-  /api/v1/subscriptions/{subscriptionID}: {delete: {parameters: [{in: path, name: subscriptionID, required: true, schema: {type: string, format: uuid}}], responses: {'204': {description: Deleted}}}}
-  /api/v1/events: {get: {responses: {'200': {description: Keyset-paginated events}}}}
-  /api/v1/messages: {get: {responses: {'200': {description: Keyset-paginated messages}}}}
-  /api/v1/messages/{messageID}: {get: {parameters: [{$ref: '#/components/parameters/MessageID'}], responses: {'200': {description: Detail and attempts}}}}
-  /api/v1/messages/{messageID}/replay: {post: {parameters: [{$ref: '#/components/parameters/MessageID'}], responses: {'202': {description: New message}}}}
-  /api/v1/signatures/verify: {post: {responses: {'200': {description: Valid}}}}
-  /healthz: {get: {security: [], responses: {'200': {description: Alive}}}}
-  /readyz: {get: {security: [], responses: {'200': {description: Ready}, '503': {description: Not ready}}}}
-  /metrics: {get: {security: [], responses: {'200': {description: Prometheus}}}}
+    get:
+      tags: [Endpoints]
+      operationId: listEndpoints
+      summary: Получить endpoint приложения
+      parameters:
+        - {$ref: '#/components/parameters/AppID'}
+      responses:
+        '200':
+          description: Endpoint без секретов
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Endpoint'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      tags: [Endpoints]
+      operationId: createEndpoint
+      summary: Создать получателя webhook
+      parameters:
+        - {$ref: '#/components/parameters/AppID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateEndpoint'}
+      responses:
+        '201':
+          description: Endpoint создан; secret в ответ не включается
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Endpoint'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/endpoints/{endpointID}:
+    delete:
+      tags: [Endpoints]
+      operationId: disableEndpoint
+      summary: Отключить endpoint
+      parameters:
+        - {$ref: '#/components/parameters/EndpointID'}
+      responses:
+        '204': {description: Endpoint отключён}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/endpoints/{endpointID}/reset-breaker:
+    post:
+      tags: [Endpoints]
+      operationId: resetEndpointBreaker
+      summary: Сбросить circuit breaker
+      parameters:
+        - {$ref: '#/components/parameters/EndpointID'}
+      responses:
+        '204': {description: Breaker сброшен в closed}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/endpoints/{endpointID}/subscriptions:
+    post:
+      tags: [Subscriptions]
+      operationId: createSubscription
+      summary: Подписать endpoint на тип событий
+      parameters:
+        - {$ref: '#/components/parameters/EndpointID'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateSubscription'}
+      responses:
+        '201':
+          description: Подписка создана
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Subscription'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/subscriptions/{subscriptionID}:
+    delete:
+      tags: [Subscriptions]
+      operationId: deleteSubscription
+      summary: Удалить подписку
+      parameters:
+        - {$ref: '#/components/parameters/SubscriptionID'}
+      responses:
+        '204': {description: Подписка удалена}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/events:
+    get:
+      tags: [Events]
+      operationId: listEvents
+      summary: Получить страницу событий
+      parameters:
+        - {$ref: '#/components/parameters/EventTypeFilter'}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Keyset-страница событий
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/messages:
+    get:
+      tags: [Messages]
+      operationId: listMessages
+      summary: Получить страницу сообщений доставки
+      parameters:
+        - {$ref: '#/components/parameters/MessageStatusFilter'}
+        - {$ref: '#/components/parameters/EndpointFilter'}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Keyset-страница сообщений
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessagePage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/messages/{messageID}:
+    get:
+      tags: [Messages]
+      operationId: getMessage
+      summary: Получить сообщение, событие, endpoint и журнал попыток
+      parameters:
+        - {$ref: '#/components/parameters/MessageID'}
+      responses:
+        '200':
+          description: Детали доставки без секретов и request headers
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessageDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/messages/{messageID}/replay:
+    post:
+      tags: [Messages]
+      operationId: replayMessage
+      summary: Создать новое сообщение для повторной доставки
+      parameters:
+        - {$ref: '#/components/parameters/MessageID'}
+      responses:
+        '202':
+          description: Replay создан
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReplayAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/signatures/verify:
+    post:
+      tags: [Signatures]
+      operationId: verifySignature
+      summary: Проверить исходящую Hookline HMAC-подпись
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VerifySignatureRequest'}
+      responses:
+        '200':
+          description: Подпись валидна
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VerifySignatureResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/InvalidSignature'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /healthz:
+    get:
+      tags: [System]
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Процесс жив
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+
+  /readyz:
+    get:
+      tags: [System]
+      operationId: readiness
+      security: []
+      responses:
+        '200':
+          description: Процесс готов принимать трафик
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Readiness'}
+        '503':
+          description: База или обязательные workers недоступны
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Readiness'}
+
+  /metrics:
+    get:
+      tags: [System]
+      operationId: metrics
+      security: []
+      responses:
+        '200':
+          description: Метрики Prometheus
+          content:
+            text/plain:
+              schema: {type: string}
+
 components:
-  securitySchemes: {bearerAuth: {type: http, scheme: bearer}}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Hookline API key
+
+  parameters:
+    AppID:
+      in: path
+      name: appID
+      required: true
+      schema: {type: string, format: uuid}
+    EndpointID:
+      in: path
+      name: endpointID
+      required: true
+      schema: {type: string, format: uuid}
+    SubscriptionID:
+      in: path
+      name: subscriptionID
+      required: true
+      schema: {type: string, format: uuid}
+    MessageID:
+      in: path
+      name: messageID
+      required: true
+      schema: {type: string, format: uuid}
+    EventTypeHeader:
+      in: header
+      name: X-Event-Type
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 255}
+      example: order.created
+    IdempotencyKeyHeader:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema: {type: string}
+    GitHubEventHeader:
+      in: header
+      name: X-GitHub-Event
+      required: true
+      schema: {type: string, minLength: 1}
+      example: push
+    GitHubDeliveryHeader:
+      in: header
+      name: X-GitHub-Delivery
+      required: false
+      schema: {type: string}
+    GitHubSignatureHeader:
+      in: header
+      name: X-Hub-Signature-256
+      required: true
+      schema:
+        type: string
+        pattern: '^sha256=[0-9a-f]{64}$'
+    Limit:
+      in: query
+      name: limit
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    Cursor:
+      in: query
+      name: cursor
+      required: false
+      description: Непрозрачный URL-safe base64 keyset-курсор из предыдущего ответа.
+      schema: {type: string}
+    EventTypeFilter:
+      in: query
+      name: type
+      required: false
+      schema: {type: string}
+    MessageStatusFilter:
+      in: query
+      name: status
+      required: false
+      schema:
+        type: string
+        enum: [pending, in_flight, delivered, dead]
+    EndpointFilter:
+      in: query
+      name: endpointId
+      required: false
+      schema: {type: string, format: uuid}
+
   responses:
     BadRequest:
-      description: Invalid request
+      description: Невалидные поля, JSON, event type или cursor
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     Unauthorized:
-      description: Missing or invalid credentials
+      description: Bearer key отсутствует или недействителен
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
-  parameters:
-    AppID: {in: path, name: appID, required: true, schema: {type: string, format: uuid}}
-    EndpointID: {in: path, name: endpointID, required: true, schema: {type: string, format: uuid}}
-    MessageID: {in: path, name: messageID, required: true, schema: {type: string, format: uuid}}
+    InvalidSignature:
+      description: Подпись неверна или timestamp вышел за tolerance
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NotFound:
+      description: Ресурс не найден или недоступен текущему приложению
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Conflict:
+      description: Ресурс уже существует или конфликтует с текущим состоянием
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PayloadTooLarge:
+      description: Тело превышает INGEST_MAX_BODY_BYTES
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    UnsupportedMediaType:
+      description: Требуется Content-Type application/json
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    InternalError:
+      description: Внутренняя ошибка сервиса
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+
   schemas:
+    IngestAccepted:
+      type: object
+      additionalProperties: false
+      required: [eventId, messagesCreated, duplicate]
+      properties:
+        eventId: {type: string, format: uuid}
+        messagesCreated: {type: integer, minimum: 0}
+        duplicate: {type: boolean}
+
     CreateApp:
       type: object
       additionalProperties: false
@@ -64,17 +503,44 @@ components:
         githubWebhookSecret:
           type: string
           minLength: 16
+          maxLength: 512
           writeOnly: true
+          description: Секрет проверки входящих GitHub webhook; никогда не возвращается API.
+    App:
+      type: object
+      additionalProperties: false
+      required: [id, name, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        createdAt: {type: string, format: date-time}
     AppCreated:
       type: object
+      additionalProperties: false
       required: [id, name, apiKey]
       properties:
         id: {type: string, format: uuid}
         name: {type: string}
-        apiKey: {type: string, writeOnly: true, description: Returned once}
+        apiKey:
+          type: string
+          readOnly: true
+          description: Возвращается только при создании приложения.
+
+    CreateEndpoint:
+      type: object
+      additionalProperties: false
+      required: [url, secret]
+      properties:
+        url: {type: string, format: uri}
+        secret: {type: string, minLength: 1, writeOnly: true}
+        rateLimitRps:
+          type: integer
+          minimum: 0
+          description: При 0 применяется DEFAULT_ENDPOINT_RATE_LIMIT.
     Endpoint:
       type: object
-      required: [id, appId, url, status, rateLimitRps, createdAt]
+      additionalProperties: false
+      required: [id, appId, url, status, breakerState, breakerFailures, rateLimitRps, createdAt]
       properties:
         id: {type: string, format: uuid}
         appId: {type: string, format: uuid}
@@ -84,8 +550,29 @@ components:
         breakerFailures: {type: integer, minimum: 0}
         rateLimitRps: {type: integer, minimum: 0}
         createdAt: {type: string, format: date-time}
+
+    CreateSubscription:
+      type: object
+      additionalProperties: false
+      required: [eventType]
+      properties:
+        eventType:
+          type: string
+          minLength: 1
+          description: Exact (`order.created`), prefix (`order.*`) или wildcard (`*`).
+    Subscription:
+      type: object
+      additionalProperties: false
+      required: [id, endpointId, eventType, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        endpointId: {type: string, format: uuid}
+        eventType: {type: string}
+        createdAt: {type: string, format: date-time}
+
     Event:
       type: object
+      additionalProperties: false
       required: [id, appId, type, payload, receivedAt]
       properties:
         id: {type: string, format: uuid}
@@ -94,8 +581,19 @@ components:
         payload: {}
         idempotencyKey: {type: string}
         receivedAt: {type: string, format: date-time}
+    EventPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Event'}
+        nextCursor: {type: string}
+
     Message:
       type: object
+      additionalProperties: false
       required: [id, eventId, endpointId, status, attempt, nextAttemptAt, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
@@ -104,15 +602,102 @@ components:
         status: {type: string, enum: [pending, in_flight, delivered, dead]}
         attempt: {type: integer, minimum: 0}
         nextAttemptAt: {type: string, format: date-time}
-        replayOf: {type: string, format: uuid}
+        replayOf:
+          type: [string, 'null']
+          format: uuid
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    MessagePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Message'}
+        nextCursor: {type: string}
+    Attempt:
+      type: object
+      additionalProperties: false
+      required: [attemptNo, responseCode, snippet, error, durationMs, createdAt]
+      properties:
+        attemptNo: {type: integer, minimum: 1}
+        responseCode:
+          type: [integer, 'null']
+          minimum: 100
+          maximum: 599
+        snippet: {type: string}
+        error: {type: string}
+        durationMs: {type: integer, minimum: 0}
+        createdAt: {type: string, format: date-time}
+    MessageDetail:
+      type: object
+      additionalProperties: false
+      required: [id, status, attempt, nextAttemptAt, replayOf, event, endpoint, attempts]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [pending, in_flight, delivered, dead]}
+        attempt: {type: integer, minimum: 0}
+        nextAttemptAt:
+          type: [string, 'null']
+          format: date-time
+        replayOf:
+          type: [string, 'null']
+          format: uuid
+        event: {$ref: '#/components/schemas/Event'}
+        endpoint: {$ref: '#/components/schemas/Endpoint'}
+        attempts:
+          type: array
+          items: {$ref: '#/components/schemas/Attempt'}
+    ReplayAccepted:
+      type: object
+      additionalProperties: false
+      required: [newMessageId, replayOf]
+      properties:
+        newMessageId: {type: string, format: uuid}
+        replayOf: {type: string, format: uuid}
+
+    VerifySignatureRequest:
+      type: object
+      additionalProperties: false
+      required: [payload, secret, timestamp, signature]
+      properties:
+        payload: {type: string}
+        secret: {type: string, writeOnly: true}
+        timestamp: {type: string, pattern: '^[0-9]+$'}
+        signature: {type: string, pattern: '^v1=[0-9a-f]{64}$'}
+    VerifySignatureResponse:
+      type: object
+      additionalProperties: false
+      required: [valid]
+      properties:
+        valid: {type: boolean, const: true}
+
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, const: ok}
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status, components]
+      properties:
+        status: {type: string, enum: [ok, unavailable]}
+        components:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, unavailable]
     Problem:
       type: object
+      additionalProperties: false
       required: [error]
       properties:
         error:
           type: object
+          additionalProperties: false
           required: [code, message]
           properties:
             code: {type: string}

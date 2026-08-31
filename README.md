@@ -47,6 +47,18 @@ make cover
 make lint
 ```
 
+Полная автоматическая проверка перед релизом запускает тесты, отдельный Compose
+стенд, проверку трёх workers в Prometheus, Grafana dashboard, восстановление
+очереди после `SIGKILL` и нагрузочный прогон по критериям ТЗ:
+
+```bash
+make release-verify
+```
+
+Команда использует отдельный Compose project и удаляет его тестовые контейнеры и
+volume после завершения. Чтобы оставить стенд для диагностики, запустите
+`HOOKLINE_RELEASE_KEEP_STACK=1 make release-verify`.
+
 Контракт: [OpenAPI](docs/api/openapi.yaml), гарантии:
 [delivery-spec](docs/delivery-spec.md), [нагрузочная проверка](docs/performance.md),
 [чек-лист релиза](docs/release-checklist.md), полное [ТЗ](docs/TZ.md).

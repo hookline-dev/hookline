@@ -18,6 +18,16 @@ import (
 )
 
 func Open(t testing.TB) *pgxpool.Pool {
+	return open(t, true)
+}
+
+// OpenUnmigrated creates an isolated PostgreSQL schema without applying
+// Hookline migrations. It is intended for migration compatibility tests.
+func OpenUnmigrated(t testing.TB) *pgxpool.Pool {
+	return open(t, false)
+}
+
+func open(t testing.TB, migrate bool) *pgxpool.Pool {
 	t.Helper()
 	c, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
@@ -59,7 +69,10 @@ func Open(t testing.TB) *pgxpool.Pool {
 		t.Fatal(e)
 	}
 	t.Cleanup(p.Close)
-	if e = storepostgres.Migrate(c, p); e != nil {
+	if migrate {
+		e = storepostgres.Migrate(c, p)
+	}
+	if e != nil {
 		t.Fatal(e)
 	}
 	return p

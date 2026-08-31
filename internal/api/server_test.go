@@ -18,6 +18,7 @@ import (
 type repositoryStub struct {
 	keyHash string
 	app     domain.App
+	detail  domain.MessageDetail
 	created bool
 	secret  string
 }
@@ -64,6 +65,9 @@ func (r *repositoryStub) ListMessages(context.Context, domain.MessageFilter) ([]
 	return nil, nil
 }
 func (r *repositoryStub) GetMessageDetail(context.Context, domain.MessageID) (domain.MessageDetail, error) {
+	if r.detail.Event.AppID != "" {
+		return r.detail, nil
+	}
 	return domain.MessageDetail{Event: domain.Event{AppID: r.app.ID}}, nil
 }
 func (r *repositoryStub) ReplayMessage(context.Context, domain.MessageID, domain.MessageID, time.Time) (domain.Message, error) {
@@ -154,5 +158,46 @@ func TestErrorMapping(t *testing.T) {
 		if w.Code != want {
 			t.Fatalf("%v: got %d, want %d", err, w.Code, want)
 		}
+	}
+}
+
+func TestMessageDetailAttemptDTO(t *testing.T) {
+	const appID = "018f47a6-5f64-4e42-8a13-f7d2a2f77777"
+	const messageID = "018f47a6-5f64-4e42-8a13-f7d2a2f76666"
+	code := http.StatusBadGateway
+	repo := &repositoryStub{
+		app: domain.App{ID: appID, Name: "one"},
+		detail: domain.MessageDetail{
+			Message: domain.Message{ID: messageID, Status: domain.StatusDead, NextAttemptAt: time.Unix(1_700_000_100, 0)},
+			Event:   domain.Event{AppID: appID},
+			Attempts: []domain.Attempt{{
+				AttemptNo:       2,
+				RequestHeaders:  map[string]string{"Authorization": "secret"},
+				ResponseCode:    &code,
+				ResponseSnippet: "upstream failed",
+				Duration:        1250 * time.Millisecond,
+				CreatedAt:       time.Unix(1_700_000_001, 0),
+			}},
+		},
+	}
+	w := apiRequest(testRouter(repo), "admin", http.MethodGet, "/api/v1/messages/"+messageID, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Attempts      []map[string]any `json:"attempts"`
+		NextAttemptAt any              `json:"nextAttemptAt"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Attempts) != 1 || body.Attempts[0]["durationMs"] != float64(1250) {
+		t.Fatalf("attempts=%#v", body.Attempts)
+	}
+	if _, exposed := body.Attempts[0]["requestHeaders"]; exposed {
+		t.Fatal("request headers were exposed")
+	}
+	if body.NextAttemptAt != nil {
+		t.Fatalf("dead message nextAttemptAt=%v, want null", body.NextAttemptAt)
 	}
 }

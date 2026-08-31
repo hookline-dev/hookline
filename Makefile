@@ -3,7 +3,7 @@ include .env
 export
 endif
 COMPOSE=docker compose -f deploy/docker-compose.yml
-.PHONY: help up down down-v logs build test test-integration cover lint fmt vet migrate demo
+.PHONY: help up down down-v logs build test test-integration cover lint fmt vet migrate demo observability-smoke worker-recovery release-verify
 help: ## показать команды
 	@awk 'BEGIN {FS=":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-20s %s\n",$$1,$$2}' $(MAKEFILE_LIST)
 up: ## поднять полный стек
@@ -32,3 +32,9 @@ migrate: ## применить миграции отдельной команд�
 	$(COMPOSE) run --rm --entrypoint /usr/local/bin/migrate hookline-api
 demo: ## минимальное end-to-end демо
 	./scripts/demo.sh
+observability-smoke: ## проверить Prometheus, workers и Grafana
+	./scripts/observability-smoke.sh
+worker-recovery: ## проверить восстановление после SIGKILL воркеров
+	./scripts/worker-recovery.sh
+release-verify: ## выполнить автоматическую проверку релиза v1
+	./scripts/release-verify.sh
