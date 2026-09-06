@@ -653,7 +653,22 @@ func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 		mapError(w, e)
 		return
 	}
-	write(w, 200, map[string]any{"id": v.Message.ID, "status": v.Message.Status, "attempt": v.Message.Attempt, "nextAttemptAt": v.Message.NextAttemptAt, "replayOf": v.Message.ReplayOf, "event": v.Event, "endpoint": endpointDTO(v.Endpoint), "attempts": v.Attempts})
+	attempts := make([]map[string]any, 0, len(v.Attempts))
+	for _, attempt := range v.Attempts {
+		attempts = append(attempts, map[string]any{
+			"attemptNo":    attempt.AttemptNo,
+			"responseCode": attempt.ResponseCode,
+			"snippet":      attempt.ResponseSnippet,
+			"error":        attempt.Error,
+			"durationMs":   attempt.Duration.Milliseconds(),
+			"createdAt":    attempt.CreatedAt,
+		})
+	}
+	var nextAttemptAt any = v.Message.NextAttemptAt
+	if v.Message.Status == domain.StatusDead {
+		nextAttemptAt = nil
+	}
+	write(w, 200, map[string]any{"id": v.Message.ID, "status": v.Message.Status, "attempt": v.Message.Attempt, "nextAttemptAt": nextAttemptAt, "replayOf": v.Message.ReplayOf, "event": v.Event, "endpoint": endpointDTO(v.Endpoint), "attempts": attempts})
 }
 
 func (s *server) replay(w http.ResponseWriter, r *http.Request) {

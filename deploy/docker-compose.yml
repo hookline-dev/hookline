@@ -47,10 +47,12 @@ services:
     environment: {<<: *env, APP_MODE: worker, WORKER_METRICS_PORT: 9093}
     deploy: {replicas: 3}
     depends_on: {hookline-api: {condition: service_healthy}}
+    healthcheck: {test: [CMD, wget, -qO-, http://localhost:9093/healthz], interval: 5s, timeout: 3s, retries: 20}
   sink:
     build: {context: ..}
     entrypoint: [/usr/local/bin/sink]
     ports: ["${SINK_PORT}:9090"]
+    healthcheck: {test: [CMD, wget, -qO-, http://localhost:9090/healthz], interval: 3s, timeout: 3s, retries: 20}
   prometheus:
     image: prom/prometheus:v3.5.0
     volumes: [./prometheus.yml:/etc/prometheus/prometheus.yml:ro]
